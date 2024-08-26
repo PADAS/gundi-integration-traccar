@@ -1,3 +1,5 @@
+from pydantic import Field
+
 from app.services.errors import ConfigurationNotFound
 from app.services.utils import find_config_for_action
 from .core import PullActionConfiguration, AuthActionConfiguration
@@ -13,8 +15,7 @@ class FetchSamplesConfig(PullActionConfiguration):
 
 
 class PullObservationsConfig(PullActionConfiguration):
-    # We may include something here in the future
-    pass
+    observations_per_request: int = Field(500, description="The integration will process chunks of this size per request")
 
 
 def get_auth_config(integration):

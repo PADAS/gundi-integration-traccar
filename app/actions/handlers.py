@@ -10,9 +10,6 @@ from app.services.gundi import send_observations_to_gundi
 from app.services.state import IntegrationStateManager
 
 
-LOAD_BATCH_SIZE = 500
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -83,7 +80,7 @@ async def action_fetch_samples(integration, action_config: FetchSamplesConfig):
         }
 
 
-# @activity_logger()
+@activity_logger()
 async def action_pull_observations(integration, action_config: PullObservationsConfig):
     logger.info(f"Executing pull_observations action with integration {integration} and action_config {action_config}...")
     async for attempt in stamina.retry_context(
@@ -138,7 +135,7 @@ async def action_pull_observations(integration, action_config: PullObservationsC
                 )
 
                 if transformed_data:
-                    def generate_batches(iterable, n=LOAD_BATCH_SIZE):
+                    def generate_batches(iterable, n=action_config.observations_per_request):
                         for i in range(0, len(iterable), n):
                             yield iterable[i: i + n]
 
