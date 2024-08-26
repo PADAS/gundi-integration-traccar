@@ -75,8 +75,8 @@ async def action_fetch_samples(integration, action_config: FetchSamplesConfig):
     else:
         logger.info(f"Observations pulled with success.")
         return {
-            "observations_extracted": action_config.observations_to_extract,
-            "observations": devices[:action_config.observations_to_extract]
+            "devices_extracted": action_config.observations_to_extract,
+            "devices": devices[:action_config.observations_to_extract]
         }
 
 
@@ -97,7 +97,7 @@ async def action_pull_observations(integration, action_config: PullObservationsC
     if devices:
         logger.info(f"Devices pulled with success. Length: {len(devices)}")
 
-        start_time_limit = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(hours=48)
+        start_time_limit = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=1)
         device_count = len(devices)
 
         for i, device in enumerate(devices):
