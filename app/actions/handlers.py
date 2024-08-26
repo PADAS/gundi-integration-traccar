@@ -116,7 +116,7 @@ async def action_pull_observations(integration, action_config: PullObservationsC
             except:
                 device_state = client.DeviceState(recorded_at=start_time_limit)
 
-            # Ensure we don't go back further than 48 hours
+            # Ensure we don't go back further than 24 hours
             start_at = max(device_state.recorded_at, start_time_limit)
 
             traccar_observations = await client.get_positions_since(
