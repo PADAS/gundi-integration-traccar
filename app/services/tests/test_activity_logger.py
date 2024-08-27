@@ -1,3 +1,4 @@
+import json
 import pytest
 from unittest.mock import ANY
 from gundi_core.events import (
@@ -24,24 +25,24 @@ from app.webhooks import GenericJsonPayload, GenericJsonTransformConfig
     indirect=["system_event"])
 @pytest.mark.asyncio
 async def test_publish_event(
-        mocker, mock_pubsub_client, integration_event_pubsub_message, gcp_pubsub_publish_response,
+        mocker, mock_pubsub_client, integration_event_pubsub_v1_message, gcp_pubsub_v1_publish_response,
         system_event
 ):
-    mocker.patch("app.services.activity_logger.pubsub", mock_pubsub_client)
+    mocker.patch("app.services.activity_logger.pubsub_v1", mock_pubsub_client)
 
     response = await publish_event(
         event=system_event,
         topic_name=settings.INTEGRATION_EVENTS_TOPIC
     )
 
-    assert response == gcp_pubsub_publish_response
+    assert response == gcp_pubsub_v1_publish_response
     assert mock_pubsub_client.PublisherClient.called
-    assert mock_pubsub_client.PubsubMessage.called
+    # assert mock_pubsub_client.PubsubMessage.called
     assert mock_pubsub_client.PublisherClient.called
     assert mock_pubsub_client.PublisherClient.return_value.publish.called
     mock_pubsub_client.PublisherClient.return_value.publish.assert_any_call(
-        f"projects/{settings.GCP_PROJECT_ID}/topics/{settings.INTEGRATION_EVENTS_TOPIC}",
-        [integration_event_pubsub_message],
+        topic=f"projects/{settings.GCP_PROJECT_ID}/topics/{settings.INTEGRATION_EVENTS_TOPIC}",
+        data=json.dumps(system_event.dict(), default=str).encode("utf-8"),
     )
 
 

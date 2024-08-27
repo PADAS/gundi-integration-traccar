@@ -5,7 +5,7 @@ import logging
 import aiohttp
 import stamina
 from functools import wraps
-from google.cloud.pubsub_v1 import PublisherClient
+from google.cloud import pubsub_v1
 from gundi_core.events import (
     SystemEventBaseModel,
     IntegrationActionCustomLog,
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
     wait_jitter=3.0
 )
 async def publish_event(event: SystemEventBaseModel, topic_name: str):
-    client = PublisherClient()
+    client = pubsub_v1.PublisherClient()
     # Get the topic
     topic = client.topic_path(settings.GCP_PROJECT_ID, topic_name)
     # Prepare the payload

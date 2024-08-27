@@ -865,11 +865,11 @@ def mock_state_manager(mocker):
 
 @pytest.fixture
 def mock_pubsub_client(
-        mocker, integration_event_pubsub_message, gcp_pubsub_publish_response
+        mocker, integration_event_pubsub_message, gcp_pubsub_v1_publish_response
 ):
     mock_client = mocker.MagicMock()
     mock_publisher = mocker.MagicMock()
-    mock_publisher.publish.return_value = async_return(gcp_pubsub_publish_response)
+    mock_publisher.publish.return_value = async_return(gcp_pubsub_v1_publish_response)
     mock_publisher.topic_path.return_value = (
         f"projects/{settings.GCP_PROJECT_ID}/topics/{settings.INTEGRATION_EVENTS_TOPIC}"
     )
@@ -879,10 +879,20 @@ def mock_pubsub_client(
 
 
 @pytest.fixture
+def integration_event_pubsub_v1_message():
+    return b'{"event_id": "6214c049-f786-45eb-9877-2efb2c2cf8e9", "timestamp": "2024-01-26 14:03:46.199385+00:00", "schema_version": "v1", "payload": {"integration_id": "779ff3ab-5589-4f4c-9e0a-ae8d6c9edff0", "action_id": "pull_observations", "config_data": {"end_datetime": "2024-01-01T00:00:00-00:00", "start_datetime": "2024-01-10T23:59:59-00:00", "force_run_since_start": True}}, "event_type": "IntegrationActionStarted"}'
+
+
+@pytest.fixture
 def integration_event_pubsub_message():
     return pubsub.PubsubMessage(
         b'{"event_id": "6214c049-f786-45eb-9877-2efb2c2cf8e9", "timestamp": "2024-01-26 14:03:46.199385+00:00", "schema_version": "v1", "payload": {"integration_id": "779ff3ab-5589-4f4c-9e0a-ae8d6c9edff0", "action_id": "pull_observations", "config_data": {"end_datetime": "2024-01-01T00:00:00-00:00", "start_datetime": "2024-01-10T23:59:59-00:00", "force_run_since_start": True}}, "event_type": "IntegrationActionStarted"}'
     )
+
+
+@pytest.fixture
+def gcp_pubsub_v1_publish_response():
+    return "7061707768812258"
 
 
 @pytest.fixture
