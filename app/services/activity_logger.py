@@ -5,7 +5,7 @@ import logging
 import aiohttp
 import stamina
 from functools import wraps
-from gcloud.aio import pubsub
+from google.cloud.pubsub_v1 import PublisherClient
 from gundi_core.events import (
     SystemEventBaseModel,
     IntegrationActionCustomLog,
@@ -40,28 +40,26 @@ logger = logging.getLogger(__name__)
     wait_jitter=3.0
 )
 async def publish_event(event: SystemEventBaseModel, topic_name: str):
-    timeout_settings = aiohttp.ClientTimeout(total=10.0)
-    async with aiohttp.ClientSession(
-        raise_for_status=True, timeout=timeout_settings
-    ) as session:
-        client = pubsub.PublisherClient(session=session)
-        # Get the topic
-        topic = client.topic_path(settings.GCP_PROJECT_ID, topic_name)
-        # Prepare the payload
-        binary_payload = json.dumps(event.dict(), default=str).encode("utf-8")
-        messages = [pubsub.PubsubMessage(binary_payload)]
-        logger.debug(f"Sending event {event} to PubSub topic {topic_name}..")
-        try:  # Send to pubsub
-            response = await client.publish(topic, messages)
-        except Exception as e:
-            logger.exception(
-                f"Error publishing system event to topic {topic_name}: {e}. This will be retried."
-            )
-            raise e
-        else:
-            logger.debug(f"System event {event} published successfully.")
-            logger.debug(f"GCP PubSub response: {response}")
-            return response
+    client = PublisherClient()
+    # Get the topic
+    topic = client.topic_path(settings.GCP_PROJECT_ID, topic_name)
+    # Prepare the payload
+    binary_payload = json.dumps(event.dict(), default=str).encode("utf-8")
+
+    logger.debug(f"Sending event {event} to PubSub topic {topic_name}..")
+    try:  # Send to pubsub
+        # Make the request
+        response = client.publish(topic=topic, data=binary_payload)
+        logger.debug(f"Published message: {binary_payload}")
+    except Exception as e:
+        logger.exception(
+            f"Error publishing system event to topic {topic_name}: {e}. This will be retried."
+        )
+        raise e
+    else:
+        logger.debug(f"System event {event} published successfully.")
+        logger.debug(f"GCP PubSub response: {response.result()}")
+        return response.result()
 
 
 async def log_activity(integration_id: str, action_id: str, title: str, level="INFO", config_data: dict = None, data: dict = None):
