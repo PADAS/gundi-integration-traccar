@@ -81,7 +81,7 @@ async def execute(
     json_payload = json.loads(payload)
     print(f"JSON Payload: {json_payload}")
     if settings.PROCESS_PUBSUB_MESSAGES_IN_BACKGROUND:
-        print(f"Running synchronously...")
+        print(f"Running in background...")
         background_tasks.add_task(
             execute_action,
             integration_id=json_payload.get("integration_id"),
