@@ -5,6 +5,7 @@ import stamina
 import pydantic
 import redis.exceptions
 import app.actions.client as client
+import app.settings as settings
 
 from app.actions.configurations import AuthenticateConfig, FetchSamplesConfig, PullObservationsConfig
 from app.services.activity_logger import activity_logger
@@ -156,7 +157,7 @@ async def action_pull_observations(integration, action_config: PullObservationsC
 
                 if transformed_data:
                     # We send only the latest 100 obs
-                    transformed_data = sorted(transformed_data[:100], key=lambda x: x.get("recorded_at"), reverse=True)
+                    transformed_data = sorted(transformed_data[:settings.MAX_OBSERVATIONS_TO_SEND], key=lambda x: x.get("recorded_at"), reverse=True)
                     async for attempt in stamina.retry_context(
                             on=httpx.HTTPError,
                             attempts=3,
@@ -198,4 +199,4 @@ async def action_pull_observations(integration, action_config: PullObservationsC
             else:
                 logger.info(f"No observation extracted for device: {device_id}.")
 
-    return
+    return "Finished"
