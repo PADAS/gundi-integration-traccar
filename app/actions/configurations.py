@@ -1,3 +1,4 @@
+from enum import Enum
 from pydantic import Field
 
 from app.services.errors import ConfigurationNotFound
@@ -14,7 +15,16 @@ class FetchSamplesConfig(PullActionConfiguration):
     observations_to_extract: int = 20
 
 
+class RecordedAtFieldNameEnum(str, Enum):
+    fixTime = 'fixTime'
+    serverTime = 'serverTime'
+
+
 class PullObservationsConfig(PullActionConfiguration):
+    recorded_at_field_name: RecordedAtFieldNameEnum =  Field(
+        RecordedAtFieldNameEnum.fixTime,
+        description="The integration take this value from observations as 'recorded_at' value"
+    )
     observations_per_request: int = Field(500, description="The integration will process chunks of this size per request")
 
 

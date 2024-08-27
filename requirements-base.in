@@ -11,3 +11,4 @@ redis~=5.0.1
 gcloud-aio-pubsub~=6.0.0
 click~=8.1.7
 pyjq~=2.6.0
+google-cloud-pubsub~=2.22.0

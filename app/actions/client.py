@@ -78,7 +78,7 @@ async def get_device_list(integration):
         raise e
 
 
-def generate_positions(positions: List[TraccarPosition], lower_date=None) -> List[TraccarPosition]:
+def generate_positions(positions: List[TraccarPosition], lower_date=None, recorded_at_field_name=None) -> List[TraccarPosition]:
     '''
     Generate positions from the list of positions
     This is for the case where we get several records for a single "fix" indicated by fixTime.
@@ -90,14 +90,14 @@ def generate_positions(positions: List[TraccarPosition], lower_date=None) -> Lis
     :param: lower_date: optional lower-date to use as a filter (ex. get only positions after the latest timestamp we know about).
     '''
     time_cursor = lower_date or datetime.min.replace(tzinfo=timezone.utc)
-    for position in sorted(positions, key=lambda x: (x.fixTime, x.deviceTime)):
-        if position.fixTime > time_cursor:
+    for position in sorted(positions, key=lambda x: (getattr(x, recorded_at_field_name), x.deviceTime)):
+        if getattr(position, recorded_at_field_name) > time_cursor:
             yield position
-            time_cursor = position.fixTime
+            time_cursor = getattr(position, recorded_at_field_name)
 
 
 @backoff.on_exception(backoff.expo, (httpx.TimeoutException, httpx.HTTPStatusError, httpx.ConnectError), max_time=30)
-async def get_positions_since(integration, lower_date: datetime, device_id: str):
+async def get_positions_since(integration, lower_date: datetime, device_id: str, recorded_at_field_name):
     url = integration.base_url + '/positions'
     auth = get_auth_config(integration)
     try:
@@ -119,7 +119,11 @@ async def get_positions_since(integration, lower_date: datetime, device_id: str)
 
         if response:
             positions = list(
-                generate_positions([TraccarPosition(**p) for p in response.json()], lower_date=lower_date)
+                generate_positions(
+                    [TraccarPosition(**p) for p in response.json()],
+                    lower_date=lower_date,
+                    recorded_at_field_name=recorded_at_field_name
+                )
             )
         else:
             positions = []

@@ -2,6 +2,8 @@ import datetime
 import httpx
 import logging
 import stamina
+import pydantic
+import redis.exceptions
 import app.actions.client as client
 
 from app.actions.configurations import AuthenticateConfig, FetchSamplesConfig, PullObservationsConfig
@@ -112,15 +114,33 @@ async def action_pull_observations(integration, action_config: PullObservationsC
                     "pull_observations",
                     device_id
                 )
-                device_state = client.DeviceState.parse_obj(device_state)
-            except:
-                device_state = client.DeviceState(recorded_at=start_time_limit)
+                if device_state:
+                    device_state = client.DeviceState.parse_obj(device_state)
+                    # Assign recorded_at_field_name value from config to current state
+                    device_state.recorded_at_field_name = action_config.recorded_at_field_name.value
+                else:
+                    device_state = client.DeviceState(
+                        recorded_at=start_time_limit,
+                        recorded_at_field_name=action_config.recorded_at_field_name.value
+                    )
+            except pydantic.ValidationError as e:
+                logger.info(f"Invalid device state for device {device_id}. Exception: {e}")
+                device_state = client.DeviceState(
+                    recorded_at=start_time_limit,
+                    recorded_at_field_name=action_config.recorded_at_field_name.value
+                )
+            except redis.exceptions.RedisError as e:
+                logger.info(f"Error while reading device state from cache. Device {device_id}. Exception: {e}")
+                device_state = client.DeviceState(
+                    recorded_at=start_time_limit,
+                    recorded_at_field_name=action_config.recorded_at_field_name.value
+                )
 
             # Ensure we don't go back further than 24 hours
             start_at = max(device_state.recorded_at, start_time_limit)
 
             traccar_observations = await client.get_positions_since(
-                integration, start_at, device_id
+                integration, start_at, device_id, device_state.recorded_at_field_name
             )
 
             logger.info(
