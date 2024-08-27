@@ -5,6 +5,7 @@ import stamina
 import pydantic
 import redis.exceptions
 import app.actions.client as client
+import app.settings as settings
 
 from app.actions.configurations import AuthenticateConfig, FetchSamplesConfig, PullObservationsConfig
 from app.services.activity_logger import activity_logger
@@ -99,11 +100,11 @@ async def action_pull_observations(integration, action_config: PullObservationsC
     if devices:
         logger.info(f"Devices pulled with success. Length: {len(devices)}")
 
+        # Get 1 day of data ONLY if no device state is set
         start_time_limit = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=1)
-        device_count = len(devices)
 
         for i, device in enumerate(devices):
-            logger.info(f'Processing device {device[0]} ({i + 1}/{device_count} for integration {integration.name})')
+            logger.info(f'Processing device {device[0]} ({i + 1}/{len(devices)} for integration {integration.name})')
 
             device_id = device[0]
             device_name = device[1]
@@ -155,51 +156,47 @@ async def action_pull_observations(integration, action_config: PullObservationsC
                 )
 
                 if transformed_data:
-                    def generate_batches(iterable, n=action_config.observations_per_request):
-                        for i in range(0, len(iterable), n):
-                            yield iterable[i: i + n]
-
-                    for i, batch in enumerate(generate_batches(transformed_data)):
-                        async for attempt in stamina.retry_context(
-                                on=httpx.HTTPError,
-                                attempts=3,
-                                wait_initial=datetime.timedelta(seconds=10),
-                                wait_max=datetime.timedelta(seconds=10),
-                        ):
-                            with attempt:
-                                try:
-                                    logger.info(
-                                        f'Sending observations batch #{i}: {len(batch)} observations. Device {device_id}'
-                                    )
-                                    await send_observations_to_gundi(
-                                        observations=batch,
-                                        integration_id=str(integration.id)
-                                    )
-                                except httpx.HTTPError as e:
-                                    msg = f'Sensors API returned error for integration_id: {str(integration.id)}. Exception: {e}'
-                                    logger.exception(
-                                        msg,
-                                        extra={
-                                            'needs_attention': True,
-                                            'integration_id': str(integration.id),
-                                            'action_id': "pull_observations"
-                                        }
-                                    )
-                                    raise e
-                                else:
-                                    for vehicle in batch:
-                                        # Update state
-                                        state = {
-                                            "recorded_at": vehicle.get("recorded_at")
-                                        }
-                                        await state_manager.set_state(
-                                            str(integration.id),
-                                            "pull_observations",
-                                            state,
-                                            vehicle.get("source")
-                                        )
+                    # We send only the latest 100 obs
+                    transformed_data = sorted(transformed_data[:settings.MAX_OBSERVATIONS_TO_SEND], key=lambda x: x.get("recorded_at"), reverse=True)
+                    async for attempt in stamina.retry_context(
+                            on=httpx.HTTPError,
+                            attempts=3,
+                            wait_initial=datetime.timedelta(seconds=10),
+                            wait_max=datetime.timedelta(seconds=10),
+                    ):
+                        with attempt:
+                            try:
+                                logger.info(
+                                    f'Sending {len(transformed_data)} observations. Device {device_id}'
+                                )
+                                await send_observations_to_gundi(
+                                    observations=transformed_data,
+                                    integration_id=str(integration.id)
+                                )
+                            except httpx.HTTPError as e:
+                                msg = f'Sensors API returned error for integration_id: {str(integration.id)}. Exception: {e}'
+                                logger.exception(
+                                    msg,
+                                    extra={
+                                        'needs_attention': True,
+                                        'integration_id': str(integration.id),
+                                        'action_id': "pull_observations"
+                                    }
+                                )
+                                raise e
+                            else:
+                                # Update state
+                                state = {
+                                    "recorded_at": transformed_data[0].get("recorded_at")
+                                }
+                                await state_manager.set_state(
+                                    str(integration.id),
+                                    "pull_observations",
+                                    state,
+                                    transformed_data[0].get("source")
+                                )
 
             else:
                 logger.info(f"No observation extracted for device: {device_id}.")
 
-    return
+    return "Finished"

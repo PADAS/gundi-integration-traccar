@@ -25,7 +25,6 @@ class PullObservationsConfig(PullActionConfiguration):
         RecordedAtFieldNameEnum.fixTime,
         description="The integration take this value from observations as 'recorded_at' value"
     )
-    observations_per_request: int = Field(500, description="The integration will process chunks of this size per request")
 
 
 def get_auth_config(integration):
