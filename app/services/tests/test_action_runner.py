@@ -124,7 +124,9 @@ async def test_execute_action_from_pubsub_with_config_overrides(
 async def test_execute_action_from_api_with_invalid_config(
         mocker, mock_gundi_client_v2, integration_v2,
         mock_publish_event, mock_action_handlers,
+        mock_empty_redis
 ):
+    mocker.patch("app.services.state.redis", mock_empty_redis)
     mocker.patch("app.services.action_runner.action_handlers", mock_action_handlers)
     mocker.patch("app.services.action_runner._portal", mock_gundi_client_v2)
     mocker.patch("app.services.activity_logger.publish_event", mock_publish_event)
