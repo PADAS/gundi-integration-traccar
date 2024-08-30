@@ -8,7 +8,12 @@ import app.actions.client as client
 import app.settings as settings
 
 from gundi_core.events import IntegrationActionEvent
-from app.actions.configurations import AuthenticateConfig, FetchSamplesConfig, PullObservationsConfig, PullDevicesConfig
+from app.actions.configurations import (
+    AuthenticateConfig,
+    FetchSamplesConfig,
+    PullObservationsConfig,
+    PullObservationsPerDeviceConfig
+)
 from app.services.activity_logger import activity_logger, publish_event
 from app.services.gundi import send_observations_to_gundi
 from app.services.state import IntegrationStateManager
@@ -85,8 +90,8 @@ async def action_fetch_samples(integration, action_config: FetchSamplesConfig):
 
 
 @activity_logger()
-async def action_pull_devices(integration, action_config: PullDevicesConfig):
-    logger.info(f"Executing pull_devices action with integration {integration} and action_config {action_config}...")
+async def action_pull_observations(integration, action_config: PullObservationsConfig):
+    logger.info(f"Executing pull_observations action with integration {integration} and action_config {action_config}...")
     async for attempt in stamina.retry_context(
             on=httpx.HTTPError,
             attempts=3,
@@ -115,7 +120,7 @@ async def action_pull_devices(integration, action_config: PullDevicesConfig):
             await publish_event(
                 event=IntegrationActionEvent(
                     integration_id=integration.id,
-                    action_id="pull_observations",
+                    action_id="pull_observations_per_device",
                     config_data=config
                 ),
                 topic_name=settings.TRACCAR_ACTIONS_PUBSUB_TOPIC,
@@ -127,8 +132,8 @@ async def action_pull_devices(integration, action_config: PullDevicesConfig):
 
 
 @activity_logger()
-async def action_pull_observations(integration, action_config: PullObservationsConfig):
-    logger.info(f"Executing pull_observations action with integration {integration} and action_config {action_config}...")
+async def action_pull_observations_per_device(integration, action_config: PullObservationsPerDeviceConfig):
+    logger.info(f"Executing pull_observations_per_device action with integration {integration} and action_config {action_config}...")
 
     logger.info(f"Pulling observations for device {action_config.device_id} - {action_config.device_name}...")
 

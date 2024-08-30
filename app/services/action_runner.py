@@ -1,18 +1,13 @@
-import datetime
 import logging
-import httpx
 import pydantic
-import stamina
-import json
 from gundi_client_v2 import GundiClient
 from app.actions import action_handlers
-from app.services.state import IntegrationStateManager
+from app.services.state import IntegrationConfigurationManager
 from app import settings
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from gundi_core.events import IntegrationActionFailed, ActionExecutionFailed
-from gundi_core.schemas.v2 import Integration
 from .utils import find_config_for_action
 from .activity_logger import publish_event
 
@@ -31,30 +26,9 @@ async def execute_action(integration_id: str, action_id: str, config_overrides: 
     :return: action result if any, or raise an exception
     """
     logger.info(f"Executing action '{action_id}' for integration '{integration_id}'...")
+    integration_config_manager = IntegrationConfigurationManager()
     try:  # Get the integration config from cache
-        state_manager = IntegrationStateManager()
-        integration = await state_manager.get_state(str(integration_id), action_id, "integration_data")
-        if integration:
-            integration = Integration.parse_obj(integration)
-        else:
-            # Get the integration config from the portal
-            async for attempt in stamina.retry_context(
-                    on=httpx.HTTPError,
-                    wait_initial=1.0,
-                    wait_jitter=5.0,
-                    wait_max=32.0
-            ):
-                with attempt:
-                    # ToDo: Store configs and update it on changes (event-driven architecture)
-                    integration = await _portal.get_integration_details(integration_id=integration_id)
-                    # Save the integration data in cache (will last 1 hr)
-                    await state_manager.set_state(
-                        str(integration_id),
-                        action_id,
-                        json.loads(integration.json()),
-                        "integration_data",
-                        600
-                    )
+        integration = await integration_config_manager.get_integration_config(str(integration_id))
     except Exception as e:
         message = f"Error retrieving configuration for integration '{integration_id}': {e}"
         logger.exception(message)
