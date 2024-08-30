@@ -156,17 +156,14 @@ async def action_pull_observations(integration, action_config: PullObservationsC
                 recorded_at_field_name=action_config.recorded_at_field_name
             )
     except pydantic.ValidationError as e:
-        logger.info(f"Invalid device state for device {device_id}. Exception: {e}")
+        logger.warning(f"Invalid device state for device {device_id}. Exception: {e}")
         device_state = client.DeviceState(
             recorded_at=start_time_limit,
             recorded_at_field_name=action_config.recorded_at_field_name
         )
     except redis.exceptions.RedisError as e:
-        logger.info(f"Error while reading device state from cache. Device {device_id}. Exception: {e}")
-        device_state = client.DeviceState(
-            recorded_at=start_time_limit,
-            recorded_at_field_name=action_config.recorded_at_field_name
-        )
+        logger.exception(f"Error while reading device state from cache. Device {device_id}. Exception: {e}")
+        raise e
 
     # Ensure we don't go back further than 24 hours
     start_at = max(device_state.recorded_at, start_time_limit)
