@@ -19,7 +19,6 @@ from .activity_logger import publish_event
 
 _portal = GundiClient()
 logger = logging.getLogger(__name__)
-state_manager = IntegrationStateManager()
 
 
 async def execute_action(integration_id: str, action_id: str, config_overrides: dict = None, config_data: dict = None):
@@ -33,6 +32,7 @@ async def execute_action(integration_id: str, action_id: str, config_overrides: 
     """
     logger.info(f"Executing action '{action_id}' for integration '{integration_id}'...")
     try:  # Get the integration config from cache
+        state_manager = IntegrationStateManager()
         integration = await state_manager.get_state(str(integration_id), action_id, "integration_data")
         if integration:
             integration = Integration.parse_obj(integration)
