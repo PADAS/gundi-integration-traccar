@@ -31,6 +31,7 @@ class PullObservationsConfig(PullActionConfiguration):
     device_id: str
     device_name: str
     recorded_at_field_name: str
+    observations_per_request: int = 500
 
 
 def get_auth_config(integration):

@@ -182,52 +182,57 @@ async def action_pull_observations(integration, action_config: PullObservationsC
     if traccar_observations:
         def fn(p): return getattr(p, device_state.recorded_at_field_name)
 
-        transformed_data = list(
-            [await transform(p, device_id, device_name, recorded_at_fn=fn) for p in traccar_observations]
+        transformed_data = sorted(
+            list(
+                [await transform(p, device_id, device_name, recorded_at_fn=fn) for p in traccar_observations]
+            ),
+            key=lambda x: x.get("recorded_at"),
+            reverse=True
         )
 
         if transformed_data:
-            # We send only the latest 100 obs
-            transformed_data = sorted(transformed_data[:settings.MAX_OBSERVATIONS_TO_SEND], key=lambda x: x.get("recorded_at"), reverse=True)
-            async for attempt in stamina.retry_context(
-                    on=httpx.HTTPError,
-                    attempts=3,
-                    wait_initial=datetime.timedelta(seconds=10),
-                    wait_max=datetime.timedelta(seconds=10),
-            ):
-                with attempt:
-                    try:
-                        logger.info(
-                            f'Sending {len(transformed_data)} observations. Device {device_id}'
-                        )
-                        await send_observations_to_gundi(
-                            observations=transformed_data,
-                            integration_id=str(integration.id)
-                        )
-                    except httpx.HTTPError as e:
-                        msg = f'Sensors API returned error for integration_id: {str(integration.id)}. Exception: {e}'
-                        logger.exception(
-                            msg,
-                            extra={
-                                'needs_attention': True,
-                                'integration_id': str(integration.id),
-                                'action_id': "pull_observations"
-                            }
-                        )
-                        raise e
-                    else:
-                        # Update state
-                        state = {
-                            "recorded_at": transformed_data[0].get("recorded_at")
-                        }
-                        await state_manager.set_state(
-                            str(integration.id),
-                            "pull_observations",
-                            state,
-                            transformed_data[0].get("source")
-                        )
+            def generate_batches(iterable, n=action_config.observations_per_request):
+                for i in range(0, len(iterable), n):
+                    yield iterable[i: i + n]
+            for i, batch in enumerate(generate_batches(transformed_data)):
+                async for attempt in stamina.retry_context(
+                        on=httpx.HTTPError,
+                        attempts=3,
+                        wait_initial=datetime.timedelta(seconds=10),
+                        wait_max=datetime.timedelta(seconds=10),
+                ):
+                    with attempt:
+                        try:
+                            logger.info(
+                                f'Sending observations batch #{i}: {len(batch)} observations. Device {device_id}'
+                            )
+                            await send_observations_to_gundi(
+                                observations=batch,
+                                integration_id=str(integration.id)
+                            )
+                        except httpx.HTTPError as e:
+                            msg = f'Sensors API returned error for integration_id: {str(integration.id)}. Exception: {e}'
+                            logger.exception(
+                                msg,
+                                extra={
+                                    'needs_attention': True,
+                                    'integration_id': str(integration.id),
+                                    'action_id': "pull_observations"
+                                }
+                            )
+                            raise e
+            # Update state
+            state = {
+                "recorded_at": transformed_data[0].get("recorded_at")
+            }
+            await state_manager.set_state(
+                str(integration.id),
+                "pull_observations",
+                state,
+                transformed_data[0].get("source")
+            )
 
-                        result = {"extracted_observations": len(transformed_data)}
+            result = {"extracted_observations": len(transformed_data)}
 
     else:
         logger.info(f"No observation extracted for device: {device_id}.")
