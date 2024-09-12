@@ -30,6 +30,10 @@ from app import settings
 
 logger = logging.getLogger(__name__)
 
+# ClientSession as const
+timeout_settings = aiohttp.ClientTimeout(total=60.0)
+aio_client_session = aiohttp.ClientSession(raise_for_status=True, timeout=timeout_settings)
+
 
 # Publish events for other services or system components
 @stamina.retry(
@@ -40,10 +44,8 @@ logger = logging.getLogger(__name__)
     wait_jitter=3.0
 )
 async def publish_event(event: SystemEventBaseModel, topic_name: str):
-    timeout_settings = aiohttp.ClientTimeout(total=10.0)
-    async with aiohttp.ClientSession(
-        raise_for_status=True, timeout=timeout_settings
-    ) as session:
+    # TODO: Increase ClientTimeout time and re-use ClientSession on the template repo
+    async with aio_client_session as session:
         client = pubsub.PublisherClient(session=session)
         # Get the topic
         topic = client.topic_path(settings.GCP_PROJECT_ID, topic_name)
