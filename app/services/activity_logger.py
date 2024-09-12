@@ -48,7 +48,7 @@ class ClientSession:
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        await self._session.__aexit__()
+        await self._session.__aexit__(exc_type, exc_value, traceback)
 
     async def get_session(self):
         return self._session
