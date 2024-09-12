@@ -5,7 +5,7 @@ import logging
 import aiohttp
 import stamina
 from functools import wraps
-from google.cloud import pubsub_v1
+from gcloud.aio import pubsub
 from gundi_core.events import (
     SystemEventBaseModel,
     IntegrationActionCustomLog,
@@ -31,6 +31,29 @@ from app import settings
 logger = logging.getLogger(__name__)
 
 
+class ClientSession:
+
+    DEFAULT_CONNECT_TIMEOUT_SECONDS = 60
+
+    def __init__(self, **kwargs):
+        self._timeout_settings = aiohttp.ClientTimeout(total=self.DEFAULT_CONNECT_TIMEOUT_SECONDS)
+        self._session = aiohttp.ClientSession(raise_for_status=True, timeout=self._timeout_settings)
+
+    async def close(self):
+        await self._session.close()
+
+    # Support using this client as an async context manager.
+    async def __aenter__(self):
+        await self._session.__aenter__()
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self._session.__aexit__(exc_type, exc_value, traceback)
+
+    async def get_session(self):
+        return self._session
+
+
 # Publish events for other services or system components
 @stamina.retry(
     on=(aiohttp.ClientError, asyncio.TimeoutError),
@@ -40,26 +63,26 @@ logger = logging.getLogger(__name__)
     wait_jitter=3.0
 )
 async def publish_event(event: SystemEventBaseModel, topic_name: str):
-    client = pubsub_v1.PublisherClient()
-    # Get the topic
-    topic = client.topic_path(settings.GCP_PROJECT_ID, topic_name)
-    # Prepare the payload
-    binary_payload = json.dumps(event.dict(), default=str).encode("utf-8")
-
-    logger.debug(f"Sending event {event} to PubSub topic {topic_name}..")
-    try:  # Send to pubsub
-        # Make the request
-        response = client.publish(topic=topic, data=binary_payload)
-        logger.debug(f"Published message: {binary_payload}")
-    except Exception as e:
-        logger.exception(
-            f"Error publishing system event to topic {topic_name}: {e}. This will be retried."
-        )
-        raise e
-    else:
-        logger.debug(f"System event {event} published successfully.")
-        logger.debug(f"GCP PubSub response: {response.result()}")
-        return response.result()
+    # TODO: Increase ClientTimeout time and re-use ClientSession on the template repo
+    async with ClientSession() as session:
+        client = pubsub.PublisherClient(session=await session.get_session())
+        # Get the topic
+        topic = client.topic_path(settings.GCP_PROJECT_ID, topic_name)
+        # Prepare the payload
+        binary_payload = json.dumps(event.dict(), default=str).encode("utf-8")
+        messages = [pubsub.PubsubMessage(binary_payload)]
+        logger.debug(f"Sending event {event} to PubSub topic {topic_name}..")
+        try:  # Send to pubsub
+            response = await client.publish(topic, messages)
+        except Exception as e:
+            logger.exception(
+                f"Error publishing system event to topic {topic_name}: {e}. This will be retried."
+            )
+            raise e
+        else:
+            logger.debug(f"System event {event} published successfully.")
+            logger.debug(f"GCP PubSub response: {response}")
+            return response
 
 
 async def log_activity(integration_id: str, action_id: str, title: str, level="INFO", config_data: dict = None, data: dict = None):

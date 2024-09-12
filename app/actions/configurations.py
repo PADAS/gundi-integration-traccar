@@ -21,10 +21,17 @@ class RecordedAtFieldNameEnum(str, Enum):
 
 
 class PullObservationsConfig(PullActionConfiguration):
-    recorded_at_field_name: RecordedAtFieldNameEnum =  Field(
+    recorded_at_field_name: RecordedAtFieldNameEnum = Field(
         RecordedAtFieldNameEnum.fixTime,
         description="The integration take this value from observations as 'recorded_at' value"
     )
+
+
+class PullObservationsPerDeviceConfig(PullActionConfiguration):
+    device_id: str
+    device_name: str
+    recorded_at_field_name: str
+    observations_per_request: int = 500
 
 
 def get_auth_config(integration):
@@ -55,7 +62,7 @@ def get_fetch_samples_config(integration):
     return FetchSamplesConfig.parse_obj(fetch_samples_config.data)
 
 
-def get_pull_config(integration):
+def get_pull_observations_config(integration):
     # Look for the login credentials, needed for any action
     pull_config = find_config_for_action(
         configurations=integration.configurations,
@@ -63,7 +70,7 @@ def get_pull_config(integration):
     )
     if not pull_config:
         raise ConfigurationNotFound(
-            f"pull_config settings for integration {str(integration.id)} "
+            f"pull_observations settings for integration {str(integration.id)} "
             f"are missing. Please fix the integration setup in the portal."
         )
     return PullObservationsConfig.parse_obj(pull_config.data)

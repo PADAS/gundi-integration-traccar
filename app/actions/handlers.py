@@ -7,8 +7,14 @@ import redis.exceptions
 import app.actions.client as client
 import app.settings as settings
 
-from app.actions.configurations import AuthenticateConfig, FetchSamplesConfig, PullObservationsConfig
-from app.services.activity_logger import activity_logger
+from gundi_core.events import IntegrationActionEvent
+from app.actions.configurations import (
+    AuthenticateConfig,
+    FetchSamplesConfig,
+    PullObservationsConfig,
+    PullObservationsPerDeviceConfig
+)
+from app.services.activity_logger import activity_logger, publish_event
 from app.services.gundi import send_observations_to_gundi
 from app.services.state import IntegrationStateManager
 
@@ -100,103 +106,138 @@ async def action_pull_observations(integration, action_config: PullObservationsC
     if devices:
         logger.info(f"Devices pulled with success. Length: {len(devices)}")
 
-        # Get 1 day of data ONLY if no device state is set
-        start_time_limit = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=1)
-
         for i, device in enumerate(devices):
-            logger.info(f'Processing device {device[0]} ({i + 1}/{len(devices)} for integration {integration.name})')
+            logger.info(f"Sending PubSub message to trigger 'pull_observations' for device {device[0]}.")
 
             device_id = device[0]
             device_name = device[1]
 
-            try:
-                device_state = await state_manager.get_state(
-                    str(integration.id),
-                    "pull_observations",
-                    device_id
-                )
-                if device_state:
-                    device_state = client.DeviceState.parse_obj(device_state)
-                    # Assign recorded_at_field_name value from config to current state
-                    device_state.recorded_at_field_name = action_config.recorded_at_field_name.value
-                else:
-                    device_state = client.DeviceState(
-                        recorded_at=start_time_limit,
-                        recorded_at_field_name=action_config.recorded_at_field_name.value
-                    )
-            except pydantic.ValidationError as e:
-                logger.info(f"Invalid device state for device {device_id}. Exception: {e}")
-                device_state = client.DeviceState(
-                    recorded_at=start_time_limit,
-                    recorded_at_field_name=action_config.recorded_at_field_name.value
-                )
-            except redis.exceptions.RedisError as e:
-                logger.info(f"Error while reading device state from cache. Device {device_id}. Exception: {e}")
-                device_state = client.DeviceState(
-                    recorded_at=start_time_limit,
-                    recorded_at_field_name=action_config.recorded_at_field_name.value
-                )
-
-            # Ensure we don't go back further than 24 hours
-            start_at = max(device_state.recorded_at, start_time_limit)
-
-            traccar_observations = await client.get_positions_since(
-                integration, start_at, device_id, device_state.recorded_at_field_name
+            config = {
+                "device_id": device_id,
+                "device_name": device_name,
+                "recorded_at_field_name": action_config.recorded_at_field_name.value
+            }
+            await publish_event(
+                event=IntegrationActionEvent(
+                    integration_id=integration.id,
+                    action_id="pull_observations_per_device",
+                    config_data=config
+                ),
+                topic_name=settings.TRACCAR_ACTIONS_PUBSUB_TOPIC,
             )
 
-            logger.info(
-                f'{len(traccar_observations)} observations found for device {device_id} ({device_name})'
+            logger.info(f"PubSub message to trigger 'pull_observations' for device {device[0]} sent successfully.")
+
+    return len(devices)
+
+
+@activity_logger()
+async def action_pull_observations_per_device(integration, action_config: PullObservationsPerDeviceConfig):
+    logger.info(f"Executing pull_observations_per_device action with integration {integration} and action_config {action_config}...")
+
+    logger.info(f"Pulling observations for device {action_config.device_id} - {action_config.device_name}...")
+
+    # Get 1 day of data ONLY if no device state is set
+    start_time_limit = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=1)
+
+    device_id = action_config.device_id
+    device_name = action_config.device_name
+
+    result = {}
+
+    try:
+        device_state = await state_manager.get_state(
+            str(integration.id),
+            "pull_observations",
+            device_id
+        )
+        if device_state:
+            device_state = client.DeviceState.parse_obj(device_state)
+            # Assign recorded_at_field_name value from config to current state
+            device_state.recorded_at_field_name = action_config.recorded_at_field_name
+        else:
+            device_state = client.DeviceState(
+                recorded_at=start_time_limit,
+                recorded_at_field_name=action_config.recorded_at_field_name
             )
+    except pydantic.ValidationError as e:
+        logger.warning(f"Invalid device state for device {device_id}. Exception: {e}")
+        device_state = client.DeviceState(
+            recorded_at=start_time_limit,
+            recorded_at_field_name=action_config.recorded_at_field_name
+        )
+    except redis.exceptions.RedisError as e:
+        logger.exception(f"Error while reading device state from cache. Device {device_id}. Exception: {e}")
+        raise e
 
-            if traccar_observations:
-                def fn(p): return getattr(p, device_state.recorded_at_field_name)
+    # Ensure we don't go back further than 24 hours
+    start_at = max(device_state.recorded_at, start_time_limit)
 
-                transformed_data = list(
-                    [await transform(p, device_id, device_name, recorded_at_fn=fn) for p in traccar_observations]
-                )
+    traccar_observations = await client.get_positions_since(
+        integration, start_at, device_id, device_state.recorded_at_field_name
+    )
 
-                if transformed_data:
-                    # We send only the latest 100 obs
-                    transformed_data = sorted(transformed_data[:settings.MAX_OBSERVATIONS_TO_SEND], key=lambda x: x.get("recorded_at"), reverse=True)
-                    async for attempt in stamina.retry_context(
-                            on=httpx.HTTPError,
-                            attempts=3,
-                            wait_initial=datetime.timedelta(seconds=10),
-                            wait_max=datetime.timedelta(seconds=10),
-                    ):
-                        with attempt:
-                            try:
-                                logger.info(
-                                    f'Sending {len(transformed_data)} observations. Device {device_id}'
-                                )
-                                await send_observations_to_gundi(
-                                    observations=transformed_data,
-                                    integration_id=str(integration.id)
-                                )
-                            except httpx.HTTPError as e:
-                                msg = f'Sensors API returned error for integration_id: {str(integration.id)}. Exception: {e}'
-                                logger.exception(
-                                    msg,
-                                    extra={
-                                        'needs_attention': True,
-                                        'integration_id': str(integration.id),
-                                        'action_id': "pull_observations"
-                                    }
-                                )
-                                raise e
-                            else:
-                                # Update state
-                                state = {
-                                    "recorded_at": transformed_data[0].get("recorded_at")
+    logger.info(
+        f'{len(traccar_observations)} observations found for device {device_id} ({device_name})'
+    )
+
+    if traccar_observations:
+        def fn(p): return getattr(p, device_state.recorded_at_field_name)
+
+        transformed_data = sorted(
+            list(
+                [await transform(p, device_id, device_name, recorded_at_fn=fn) for p in traccar_observations]
+            ),
+            key=lambda x: x.get("recorded_at"),
+            reverse=True
+        )
+
+        if transformed_data:
+            def generate_batches(iterable, n=action_config.observations_per_request):
+                for i in range(0, len(iterable), n):
+                    yield iterable[i: i + n]
+            for i, batch in enumerate(generate_batches(transformed_data)):
+                async for attempt in stamina.retry_context(
+                        on=httpx.HTTPError,
+                        attempts=3,
+                        wait_initial=datetime.timedelta(seconds=10),
+                        wait_max=datetime.timedelta(seconds=10),
+                ):
+                    with attempt:
+                        try:
+                            logger.info(
+                                f'Sending observations batch #{i}: {len(batch)} observations. Device {device_id}'
+                            )
+                            await send_observations_to_gundi(
+                                observations=batch,
+                                integration_id=str(integration.id)
+                            )
+                        except httpx.HTTPError as e:
+                            msg = f'Sensors API returned error for integration_id: {str(integration.id)}. Exception: {e}'
+                            logger.exception(
+                                msg,
+                                extra={
+                                    'needs_attention': True,
+                                    'integration_id': str(integration.id),
+                                    'action_id': "pull_observations"
                                 }
-                                await state_manager.set_state(
-                                    str(integration.id),
-                                    "pull_observations",
-                                    state,
-                                    transformed_data[0].get("source")
-                                )
+                            )
+                            raise e
+            # Update state
+            state = {
+                "recorded_at": transformed_data[0].get("recorded_at")
+            }
+            await state_manager.set_state(
+                str(integration.id),
+                "pull_observations",
+                state,
+                transformed_data[0].get("source")
+            )
 
-            else:
-                logger.info(f"No observation extracted for device: {device_id}.")
+            result = {"extracted_observations": len(transformed_data)}
 
-    return "Finished"
+    else:
+        logger.info(f"No observation extracted for device: {device_id}.")
+        result = {"extracted_observations": 0}
+
+    return result

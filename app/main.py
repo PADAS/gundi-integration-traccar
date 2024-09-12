@@ -87,6 +87,7 @@ async def execute(
             integration_id=json_payload.get("integration_id"),
             action_id=json_payload.get("action_id"),
             config_overrides=json_payload.get("config_overrides"),
+            config_data=json_payload.get("config_data")
         )
     else:
         print(f"Running synchronously...")
@@ -94,6 +95,7 @@ async def execute(
             integration_id=json_payload.get("integration_id"),
             action_id=json_payload.get("action_id"),
             config_overrides=json_payload.get("config_overrides"),
+            config_data=json_payload.get("config_data")
         )
     return {}
 
