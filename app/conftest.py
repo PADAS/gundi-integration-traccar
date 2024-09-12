@@ -884,11 +884,11 @@ def mock_state_manager(mocker):
 
 @pytest.fixture
 def mock_pubsub_client(
-        mocker, integration_event_pubsub_message, gcp_pubsub_v1_publish_response
+        mocker, integration_event_pubsub_message, gcp_pubsub_publish_response
 ):
     mock_client = mocker.MagicMock()
     mock_publisher = mocker.MagicMock()
-    mock_publisher.publish.return_value = async_return(gcp_pubsub_v1_publish_response)
+    mock_publisher.publish.return_value = async_return(gcp_pubsub_publish_response)
     mock_publisher.topic_path.return_value = (
         f"projects/{settings.GCP_PROJECT_ID}/topics/{settings.INTEGRATION_EVENTS_TOPIC}"
     )

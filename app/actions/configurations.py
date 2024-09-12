@@ -70,7 +70,7 @@ def get_pull_observations_config(integration):
     )
     if not pull_config:
         raise ConfigurationNotFound(
-            f"pull_devices settings for integration {str(integration.id)} "
+            f"pull_observations settings for integration {str(integration.id)} "
             f"are missing. Please fix the integration setup in the portal."
         )
     return PullObservationsConfig.parse_obj(pull_config.data)
