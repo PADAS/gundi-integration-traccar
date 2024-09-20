@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import httpx
 import logging
@@ -23,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 state_manager = IntegrationStateManager()
+
+
+PUBSUB_MESSAGES_TO_PUBLISH_PER_REQUEST = 20 # TODO: Use a configurable variable for this (if needed)
 
 
 async def transform(position: client.TraccarPosition, device_id: str, device_name: str, recorded_at_fn=lambda x: x.fixTime):
@@ -106,27 +110,33 @@ async def action_pull_observations(integration, action_config: PullObservationsC
     if devices:
         logger.info(f"Devices pulled with success. Length: {len(devices)}")
 
-        for i, device in enumerate(devices):
-            logger.info(f"Sending PubSub message to trigger 'pull_observations' for device {device[0]}.")
+        def generate_batches(iterable, n=PUBSUB_MESSAGES_TO_PUBLISH_PER_REQUEST):
+            for i in range(0, len(iterable), n):
+                yield iterable[i: i + n]
 
-            device_id = device[0]
-            device_name = device[1]
+        for i, batch in enumerate(generate_batches(devices)):
+            logger.info(f"Sending PubSub messages batch. Size: {len(batch)}.")
+            for device in batch:
+                logger.info(f"Sending PubSub message to trigger 'pull_observations' for device {device[0]}.")
 
-            config = {
-                "device_id": device_id,
-                "device_name": device_name,
-                "recorded_at_field_name": action_config.recorded_at_field_name.value
-            }
-            await publish_event(
-                event=IntegrationActionEvent(
-                    integration_id=integration.id,
-                    action_id="pull_observations_per_device",
-                    config_data=config
-                ),
-                topic_name=settings.TRACCAR_ACTIONS_PUBSUB_TOPIC,
-            )
+                device_id = device[0]
+                device_name = device[1]
 
-            logger.info(f"PubSub message to trigger 'pull_observations' for device {device[0]} sent successfully.")
+                config = {
+                    "device_id": device_id,
+                    "device_name": device_name,
+                    "recorded_at_field_name": action_config.recorded_at_field_name.value
+                }
+                await publish_event(
+                    event=IntegrationActionEvent(
+                        integration_id=integration.id,
+                        action_id="pull_observations_per_device",
+                        config_data=config
+                    ),
+                    topic_name=settings.TRACCAR_ACTIONS_PUBSUB_TOPIC,
+                )
+                logger.info(f"PubSub message to trigger 'pull_observations' for device {device[0]} sent successfully.")
+            await asyncio.sleep(10)
 
     return len(devices)
 
