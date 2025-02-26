@@ -61,12 +61,9 @@ async def action_auth(integration, action_config: AuthenticateConfig):
             integration=integration
         )
     except httpx.HTTPError as e:
-        message = f"auth action returned error."
-        logger.exception(message, extra={
-            "integration_id": str(integration.id),
-            "attention_needed": True
-        })
-        raise e
+        message = f"HTTPError trying to check credentials: {e}."
+        logger.exception(message)
+        raise {"valid_credentials": None, "error": message}
     else:
         logger.info(f"Authenticated with success.")
         return {"valid_credentials": response is not None}
@@ -127,6 +124,7 @@ async def action_pull_observations(integration, action_config: PullObservationsC
                     "device_name": device_name,
                     "recorded_at_field_name": action_config.recorded_at_field_name.value
                 }
+                # ToDo: Refactor sub-actions triggering using action_scheduler.trigger_action()
                 await publish_event(
                     event=IntegrationActionEvent(
                         integration_id=integration.id,
