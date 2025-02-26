@@ -31,41 +31,20 @@ from app import settings
 logger = logging.getLogger(__name__)
 
 
-class ClientSession:
-
-    DEFAULT_CONNECT_TIMEOUT_SECONDS = 60
-
-    def __init__(self, **kwargs):
-        self._timeout_settings = aiohttp.ClientTimeout(total=self.DEFAULT_CONNECT_TIMEOUT_SECONDS)
-        self._session = aiohttp.ClientSession(raise_for_status=True, timeout=self._timeout_settings)
-
-    async def close(self):
-        await self._session.close()
-
-    # Support using this client as an async context manager.
-    async def __aenter__(self):
-        await self._session.__aenter__()
-        return self
-
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        await self._session.__aexit__(exc_type, exc_value, traceback)
-
-    async def get_session(self):
-        return self._session
-
-
 # Publish events for other services or system components
 @stamina.retry(
     on=(aiohttp.ClientError, asyncio.TimeoutError),
     attempts=5,
-    wait_initial=1.0,
-    wait_max=30,
-    wait_jitter=3.0
+    wait_initial=4.0,
+    wait_max=60,
+    wait_jitter=5.0
 )
 async def publish_event(event: SystemEventBaseModel, topic_name: str):
-    # TODO: Increase ClientTimeout time and re-use ClientSession on the template repo
-    async with ClientSession() as session:
-        client = pubsub.PublisherClient(session=await session.get_session())
+    timeout_settings = aiohttp.ClientTimeout(total=20.0)
+    async with aiohttp.ClientSession(
+        raise_for_status=True, timeout=timeout_settings
+    ) as session:
+        client = pubsub.PublisherClient(session=session)
         # Get the topic
         topic = client.topic_path(settings.GCP_PROJECT_ID, topic_name)
         # Prepare the payload
