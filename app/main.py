@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, status, BackgroundTasks
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from app.routers import actions, webhooks
+from app.routers import actions, webhooks, config_events
 import app.settings as settings
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -81,21 +81,17 @@ async def execute(
     json_payload = json.loads(payload)
     print(f"JSON Payload: {json_payload}")
     if settings.PROCESS_PUBSUB_MESSAGES_IN_BACKGROUND:
-        print(f"Running in background...")
         background_tasks.add_task(
             execute_action,
             integration_id=json_payload.get("integration_id"),
             action_id=json_payload.get("action_id"),
             config_overrides=json_payload.get("config_overrides"),
-            config_data=json_payload.get("config_data")
         )
     else:
-        print(f"Running synchronously...")
         await execute_action(
             integration_id=json_payload.get("integration_id"),
             action_id=json_payload.get("action_id"),
             config_overrides=json_payload.get("config_overrides"),
-            config_data=json_payload.get("config_data")
         )
     return {}
 
@@ -105,6 +101,9 @@ app.include_router(
 )
 app.include_router(
     webhooks.router, prefix="/webhooks", tags=["webhooks"], responses={}
+)
+app.include_router(
+    config_events.router, prefix="/config-events", tags=["configurations"], responses={}
 )
 
 

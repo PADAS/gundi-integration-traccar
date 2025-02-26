@@ -3,15 +3,15 @@ from pydantic import Field
 
 from app.services.errors import ConfigurationNotFound
 from app.services.utils import find_config_for_action
-from .core import PullActionConfiguration, AuthActionConfiguration
+from .core import PullActionConfiguration, AuthActionConfiguration, InternalActionConfiguration, ExecutableActionMixin
 
 
-class AuthenticateConfig(AuthActionConfiguration):
+class AuthenticateConfig(AuthActionConfiguration, ExecutableActionMixin):
     email: str
     password: str
 
 
-class FetchSamplesConfig(PullActionConfiguration):
+class FetchSamplesConfig(PullActionConfiguration, ExecutableActionMixin):
     observations_to_extract: int = 20
 
 
@@ -27,7 +27,7 @@ class PullObservationsConfig(PullActionConfiguration):
     )
 
 
-class PullObservationsPerDeviceConfig(PullActionConfiguration):
+class PullObservationsPerDeviceConfig(InternalActionConfiguration):
     device_id: str
     device_name: str
     recorded_at_field_name: str
